@@ -1,0 +1,23 @@
+[req]
+distinguished_name = kubernetes-cert
+prompt = no
+
+[kubernetes-cert]
+C = SE
+ST = Stockholm Lan
+L = Stockholm
+O = Terataki
+OU = Cloud
+CN = vrops-vip.terataki.local
+
+[req_ext]
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.0 = ${etcd-1-name}
+DNS.1 = ${etcd-1-name}
+DNS.2 = ${etcd-1-name}
+IP.1 = ${etcd-1-prv}
+IP.2 = ${etcd-1-prv}
+IP.3 = ${etcd-1-pub}
+IP.4 = ${etcd-1-pub}

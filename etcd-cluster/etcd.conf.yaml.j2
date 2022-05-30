@@ -1,0 +1,17 @@
+data-dir: /var/lib/etcd/{{ inventory_hostname }}.etcd
+name: {{ inventory_hostname }}
+initial-advertise-peer-urls: https://{{ ansible_eth0.ipv4.address }}:2380
+listen-peer-urls: https://{{ ansible_eth0.ipv4.address }}:2380,https://127.0.0.1:2380
+advertise-client-urls: https://{{ ansible_eth0.ipv4.address }}:2379
+listen-client-urls: https://{{ ansible_eth0.ipv4.address }}:2379,https://127.0.0.1:2379
+initial-cluster-state: new
+initial-cluster: {%for host in groups['etcd']%}{{ hostvars[host]['ansible_facts']['hostname'] }}.ec2.internal=https://{{ hostvars[host]['ansible_facts']['eth0']['ipv4']['address'] }}:2380{% if not loop.last %},{% endif %}{% endfor %}
+
+client-transport-security:
+  cert-file: /etc/etcd/server.crt
+  key-file: /etc/etcd/server.key
+  trusted-ca-file: /etc/etcd/ca.crt
+peer-transport-security:
+  cert-file: /etc/etcd/server.crt
+  key-file: /etc/etcd/server.key
+  trusted-ca-file: /etc/etcd/ca.crt

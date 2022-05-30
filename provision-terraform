@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+read -p 'access_key: ' AK
+read -p 'secret_key: ' SK
+
+cat ./aws-tmp > ~/.aws/credentials
+cat ./variables-tmp > ./variables.tf
+sed -ie "s/ACCESS_KEY/$AK/g" ~/.aws/credentials
+sed -ie "s|SECRET_KEY|$SK|g"  ~/.aws/credentials
+sed -ie "s/ACCESS_KEY/$AK/g" ./variables.tf
+sed -ie "s|SECRET_KEY|$SK|g" ./variables.tf
+terraform apply -auto-approve
+
+#aws ec2 wait instance-status-ok --region ${var.region} --instance-ids ${self.id} --profile cloud_user && ansible-playbook -i inventory.ini ./install-etcd.yml

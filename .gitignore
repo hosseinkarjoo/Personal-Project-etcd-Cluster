@@ -1,0 +1,4 @@
+.terraform/*
+variables.tf
+variables.tfe
+aws_creds

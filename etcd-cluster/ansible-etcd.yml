@@ -1,0 +1,195 @@
+---
+- hosts: etcd
+  become: True
+  remote_user: ec2-user
+  tasks:
+    - shell: ip a show eth0 | grep -w inet | awk '{print $2}' | cut -d / -f 1
+      register: privateIP
+
+
+
+
+- hosts: localhost
+  connection: local
+  tasks:
+    - name: generate private keys for etcd members
+      openssl_privatekey:
+        path: ../certs/{{ item }}.key
+        type: RSA
+        size: 4096
+        state: present
+        force: True
+      with_items: "{{ groups['etcd'] }}"
+
+    - name: create request CSR for etcd members
+      openssl_csr:
+        path: ../certs/{{ item }}.csr
+        privatekey_path: ../certs/{{ item }}.key
+        common_name: "{{item}}"
+        key_usage:
+          - digitalSignature
+        extended_key_usage:
+          - serverAuth
+        subject_alt_name:
+          - IP:{{ hostvars[item]['privateIP']['stdout']}}
+          - IP:127.0.0.1
+        force: True
+      with_items: "{{ groups['etcd'] }}"
+
+    - name: Generate private key for CA server
+      openssl_privatekey:
+        path: ../certs/ca.key
+        type: RSA
+        size: 4096
+        state: present
+        force: True
+
+    - name: "Generate CSR for CA"
+      openssl_csr:
+        path: ../certs/ca.csr
+        privatekey_path: ../certs/ca.key
+        common_name: ca
+        organization_name: "Etcd CA"
+        basic_constraints:
+          - CA:TRUE
+          - pathlen:1
+        basic_constraints_critical: True
+        key_usage:
+          - keyCertSign
+          - digitalSignature
+        force: True
+
+    - name: "Generate self-signed CA certificate"
+      openssl_certificate:
+        path: ../certs/ca.crt
+        privatekey_path: ../certs/ca.key
+        csr_path: ../certs/ca.csr
+        provider: selfsigned
+        force: True
+
+    - name: "Generate an `etcd` member certificate signed with our own CA certificate"
+      openssl_certificate:
+        path: ../certs/{{item}}.crt
+        csr_path: ../certs/{{item}}.csr
+        ownca_path: ../certs/ca.crt
+        ownca_privatekey_path: ../certs/ca.key
+        provider: ownca
+        force: True
+      with_items: "{{ groups['etcd'] }}"
+
+
+
+- hosts: etcd
+  become: True
+  remote_user: ec2-user
+  tasks:
+
+    - name: bionary directory
+      file:
+        path: /opt/etcd/bin
+        state: directory
+        mode: 0700
+
+    - name: data directory
+      file: 
+        path: /var/lib/etcd/{{ inventory_hostname }}.etcd
+        state: "{{ item }}"
+        mode: 0755
+      with_items:
+        - absent
+        - directory
+
+    - name: config directory
+      file:
+        path: /etc/etcd
+        state: directory
+        mode: 0755
+
+    - name: "Copy over the CA certificate"
+      copy:
+        src: ../certs/ca.crt
+        remote_src: False
+        dest: /etc/etcd/ca.crt
+        owner: root
+        group: root
+        mode: 0644
+    - name: "Copy over the `etcd` member certificate"
+      copy:
+        src: ../certs/{{inventory_hostname}}.crt
+        remote_src: False
+        dest: /etc/etcd/server.crt
+        owner: root
+        group: root
+        mode: 0644
+    - name: "Copy over the `etcd` member key"
+      copy:
+        src: ../certs/{{inventory_hostname}}.key
+        remote_src: False
+        dest: /etc/etcd/server.key
+        owner: root
+        group: root
+        mode: 0600
+
+    - name: download bionary
+      get_url:
+        url: https://storage.googleapis.com/etcd/v3.3.13/etcd-v3.3.13-linux-amd64.tar.gz
+        dest: /tmp/etcd.tar.gz
+        mode: 0700
+        
+    - name: unarchive
+      unarchive:
+        src: /tmp/etcd.tar.gz
+        dest: /opt/etcd/bin/
+        mode: 0600
+        remote_src: true
+        extra_opts:
+          - --strip-components=1
+      
+    - name: set permissions for etcd etcdctl files
+      file:
+        path: /opt/etcd/bin/{{ item }}
+        mode: 0700
+      with_items:
+        - etcd
+        - etcdctl
+
+    - name: adding env to root profile
+      lineinfile:
+        path: /etc/profile
+        state: present
+        line: export {{ item }}
+        insertafter: EOF
+      with_items:
+        - PATH=$PATH:/opt/etcd/bin
+        - ETCDCTL_API=3
+#    - name: check stop etcd
+#      service:
+#        name: etcd.service
+#        state: stopped
+#        ignore_errors: True
+#        must_exist: false
+
+    - name: etcd unit file
+      copy:
+        src: etcd.service.http
+        dest: /etc/systemd/system/etcd.service
+        mode: 0644
+
+    - name: etcd config file
+      template:
+        src: etcd.conf.yaml.j2
+        dest: /etc/etcd/etcd.conf.yaml
+        mode: 0600
+
+    - name: enable & start etcd
+      service:
+        name: etcd.service
+        state: restarted
+        enabled: yes
+
+#    - name: register ipv4 private as var
+#    - shell: echo "{{ ansible_eth0.ipv4.address }}"
+#      register: privateIP
+     - name: source
+       shell: source /etc/profile
+   
